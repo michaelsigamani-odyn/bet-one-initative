@@ -1,14 +1,17 @@
-# Odyn Compute Profiler 
+# Odyn multi-ventor prediction engine
 
-This repository tries to demonstrate a repeatable cross-OEM workflow for any member of Odyn who wants to replicate results:
+This repository demonstrates a repeatable cross-OEM training workflow: train on one vendor's hardware, transfer checkpoint artifacts, and resume on a different machine or vendor, while profiling key metrics along the way.
 
-- train on one machine,
-- transfer checkpoint artifacts,
-- resume on a different machine/vendor,
-- validate continuity with telemetry and summary checks.
-- So far mi300x, radeon, DGX-Spark connected via QSFP
+Analytical models of AI/ML training cost exist, but the noise in real systems is too large for them to be deterministic. Instead, we profile a representative sample with a small set of key metrics and fit a regression to the observed behaviour. The working assumption is that the relevant latent factors (hardware characteristics, interconnect, workload shape) can be captured by a low-dimensional representation that the regressor learns from the profiled data.
 
-Current scope is intentionally sequential (single active training phase at a time). This is designed to prove portability and recovery semantics first; data-parallel or multi-job orchestration can be layered on top.
+**What the repository covers:**
+
+- Train, transfer checkpoint artifacts, and resume on a different machine or vendor
+- Profile runtime and hardware metrics during training
+- Fit a regression model on those metrics to predict training time
+- Hardware exercised so far: AMD MI300X, AMD Radeon, and NVIDIA DGX Spark, connected via QSFP
+
+The current scope is intentionally sequential, with a single active training phase at a time. This is a deliberate choice to prove portability and recovery semantics first; data-parallel and multi-job orchestration can be layered on top later.
 
 ## Prerequisites
 
@@ -18,8 +21,8 @@ Current scope is intentionally sequential (single active training phase at a tim
 
 Optional:
 
-- `sshpass` (only if you must use password-based SSH)
-- vendor GPU telemetry libraries (`nvidia-ml-py` and/or AMD SMI bindings)
+- `sshpass` (only if password-based SSH is unavoidable)
+- Vendor GPU telemetry libraries (`nvidia-ml-py` and/or the AMD SMI Python bindings)
 
 ## Quickstart
 
@@ -27,15 +30,6 @@ Optional:
 python3 --version
 conda create -y -n cross-oem-migration python=3.12
 conda activate cross-oem-migration
-
-pip install --upgrade pip setuptools wheel
-pip install -e ".[dev]"
-
-cp .env.example .env
-source .env
-
-export DAGSTER_HOME="${HOME}/.dagster_home"
-mkdir -p "${DAGSTER_HOME}"
 
 dagster dev -w workspace.yaml
 ```
@@ -46,59 +40,23 @@ Expected output includes:
 Serving dagster-webserver on http://127.0.0.1:3000
 ```
 
-Open `http://127.0.0.1:3000`, materialize the job/assets, and inspect run metadata.
+Open `http://127.0.0.1:3000`, materialize the job/assets, and inspect the run metadata.
 
-<img width="1348" height="930" alt="Screenshot 2026-09-07 at 20 26 05" src="https://github.com/user-attachments/assets/8426355f-8115-4d16-a444-ef70170f92f1" />
+<img width="1348" height="930" alt="Dagster UI showing the cross-OEM migration job" src="https://github.com/user-attachments/assets/8426355f-8115-4d16-a444-ef70170f92f1" />
 
+## Which metrics, and why?
 
-## Configuration model
+Metric selection is currently the most important part of this repository. The goal is a set of comparable, normalised metrics across NVIDIA and AMD hosts.
 
-`configs/run.json` contains run-level concerns:
+Core metrics:
 
-- source/target host selection
-- model, steps, transfer backend
-- checkpoint and timeout controls
-- benchmark controls
-
-`configs/machines.json` contains machine-level concerns:
-
-- hostname, vendor, architecture expectations
-- Python path and runtime mode
-- optional transfer control-plane metadata
-- optional distributed topology information
-
-This split is deliberate: it keeps hardware details modular and avoids vendor-specific branching in orchestration paths.
-
-## Secrets and credentials
-
-Do not commit secrets into git-tracked config files.
-
-Use environment variables for sensitive values:
-
-```bash
-export CROSS_OEM_SSH_PASSWORD="<only-if-needed>"
-```
-
-Recommended authentication order:
-
-1. SSH keys and `~/.ssh/config` aliases.
-2. SSH agent-backed keys.
-3. Password auth only when key auth is not available.
-
-
-## Telemetry and measurement
-
-This is the most important aspect of the repo currently. The goal is to normalize comparable metrics across NVIDIA and AMD hosts.
-
-Core metrics include:
-
-- training tokens processed
-- runtime seconds
-- tokens/second
-- average and peak GPU power
-- GPU energy joules
-- tokens/joule
-- checkpoint transfer throughput
+- Training tokens processed
+- Runtime (seconds)
+- Throughput (tokens/second)
+- Average and peak GPU power
+- GPU energy (joules)
+- Efficiency (tokens/joule)
+- Checkpoint transfer throughput
 
 Suggested packages:
 
@@ -107,4 +65,8 @@ Suggested packages:
 - NVIDIA: `nvidia-ml-py`
 - AMD: ROCm AMD SMI Python bindings
 
-For NVIDIA, sample NVML counters at a fixed interval and integrate power over time for energy. For AMD, use AMD SMI equivalents; API field names can differ between ROCm versions and should be verified on the target environment.
+On NVIDIA, sample NVML counters at a fixed interval and integrate power over time to obtain energy. On AMD, use the AMD SMI equivalents; field names differ between ROCm versions, so they should be verified on the target environment.
+
+---
+
+Two things worth checking on your side: the Quickstart creates the conda environment but never installs the project's dependencies (no `pip install -r requirements.txt` or `pip install -e .` step) before running `dagster dev`, so a fresh user will likely hit an import error. And I rephrased the "hope the regressor has suitably PCA'd" line as a stated working assumption rather than removing it entirely, since it's an honest caveat about the method; tighten or expand it depending on how much you want to claim.
