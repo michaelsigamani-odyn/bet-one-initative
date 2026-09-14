@@ -46,27 +46,47 @@ Open `http://127.0.0.1:3000`, materialize the job/assets, and inspect the run me
 
 ## Which metrics, and why?
 
-Metric selection is currently the most important part of this repository. The goal is a set of comparable, normalised metrics across NVIDIA and AMD hosts.
+Every GPU on Earth obeys the same physics: an operation is limited either by how fast it can compute or by how fast it can move bytes. Our predictor makes that explicit with a roofline-style latency model:
 
-Core metrics:
+pred_ms = max(flops / (eta_compute * peak_tflops),
+              bytes / (eta_bw * mem_bw)) + intercept
 
-- Training tokens processed
-- Runtime (seconds)
-- Throughput (tokens/second)
-- Average and peak GPU power
-- GPU energy (joules)
-- Efficiency (tokens/joule)
-- Checkpoint transfer throughput
+Whichever bottleneck is slower wins. The efficiency terms (eta_compute, eta_bw) capture how far a real workload falls short of the datasheet, and the intercept absorbs fixed launch and synchronization overhead.
 
-Suggested packages:
+### Validating the model
 
-- Host metrics: `psutil`
-- Export format: `prometheus-client`
-- NVIDIA: `nvidia-ml-py`
-- AMD: ROCm AMD SMI Python bindings
+A model that is never tested against reality is an opinion. We run an ablation study with three variants:
 
-On NVIDIA, sample NVML counters at a fixed interval and integrate power over time to obtain energy. On AMD, use the AMD SMI equivalents; field names differ between ROCm versions, so they should be verified on the target environment.
+Profile-only — learned purely from measured runs.
+Hardware-prior-only — driven purely by published device specifications.
+Hybrid — profiles plus priors.
+
+Each is scored by mean absolute error (MAE) on held-out configurations and held-out devices, so we learn not just how well it fits, but how well it generalizes.
+
+### Why metric selection matters most
+
+Right now, choosing the right metrics is the most consequential decision in this repository. The goal is a set of comparable, normalized measurements that mean the same thing on an NVIDIA host as they do on an AMD host. Without that, cross-vendor comparisons are storytelling, not science.
+
+### Core metrics
+
+Training tokens processed
+Runtime (seconds)
+Throughput (tokens/second)
+Average and peak GPU power (watts)
+GPU energy (joules)
+Efficiency (tokens/joule)
+Checkpoint transfer throughput
+
+### Suggested packages
+
+Host metrics: psutil
+Export format: prometheus-client
+NVIDIA: nvidia-ml-py
+AMD: ROCm AMD SMI Python bindings
+Collection notes
+
+On NVIDIA, sample NVML counters at a fixed interval and integrate power over time to obtain energy. On AMD, use the AMD SMI equivalents. Field names differ between ROCm versions, so verify them on the target environment before trusting a single number.
 
 ---
 
-Two things worth checking on your side: the Quickstart creates the conda environment but never installs the project's dependencies (no `pip install -r requirements.txt` or `pip install -e .` step) before running `dagster dev`, so a fresh user will likely hit an import error. And I rephrased the "hope the regressor has suitably PCA'd" line as a stated working assumption rather than removing it entirely, since it's an honest caveat about the method; tighten or expand it depending on how much you want to claim.
+
