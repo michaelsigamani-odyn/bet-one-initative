@@ -1,4 +1,4 @@
-# Odyn multi-ventor prediction engine
+# Odyn multi-vendor prediction engine
 
 This repository demonstrates a repeatable cross-OEM training workflow: train on one vendor's hardware, transfer checkpoint artifacts, and resume on a different machine or vendor, while profiling key metrics along the way.
 
