@@ -31,22 +31,19 @@ python3 --version
 conda create -y -n cross-oem-migration python=3.12
 conda activate cross-oem-migration
 
-dagster dev -w workspace.yaml
+dg dev -w workspace.yaml
 ```
 
-Expected output includes:
+Navigate to localhost on the browser to materialize the job/assets, and inspect the run metadata.
 
-```text
-Serving dagster-webserver on http://127.0.0.1:3000
-```
+<img width="1292" height="821" alt="run" src="https://github.com/user-attachments/assets/1bc13f06-a445-4d03-81b1-2f9d3c13415d" />
 
-Open `http://127.0.0.1:3000`, materialize the job/assets, and inspect the run metadata.
 
-<img width="1348" height="930" alt="Dagster UI showing the cross-OEM migration job" src="https://github.com/user-attachments/assets/8426355f-8115-4d16-a444-ef70170f92f1" />
 
-## Which metrics, and why?
+## Which metrics, and what's the importance?
 
 Every GPU on Earth obeys the same physics: an operation is limited either by how fast it can compute or by how fast it can move bytes. Our predictor makes that explicit with a roofline-style latency model:
+
 
 pred_ms = max(flops / (eta_compute * peak_tflops),
               bytes / (eta_bw * mem_bw)) + intercept
@@ -67,7 +64,7 @@ Each is scored by mean absolute error (MAE) on held-out configurations and held-
 
 Right now, choosing the right metrics is the most consequential decision in this repository. The goal is a set of comparable, normalized measurements that mean the same thing on an NVIDIA host as they do on an AMD host. Without that, cross-vendor comparisons are storytelling, not science.
 
-### Core metrics
+### Core metrics saved
 
 Training tokens processed
 Runtime (seconds)
@@ -77,15 +74,10 @@ GPU energy (joules)
 Efficiency (tokens/joule)
 Checkpoint transfer throughput
 
-### Suggested packages
+The part of this cross-OEM work most likely to be useful to the wider community is unifying `amd-smi` and `nvidia-smi` so that the same metrics are gathered on both platforms, despite the different tools. From there, the loop is: validate the accuracy of what was recorded, use it, refine it, and repeat until the most discriminating factors for predicting training time emerge.
 
-Host metrics: psutil
-Export format: prometheus-client
-NVIDIA: nvidia-ml-py
-AMD: ROCm AMD SMI Python bindings
-Collection notes
+Measuring checkpoint transfer speed with `psutil` is equally important. It is what lets us answer whether disaggregating the KV cache between prefill and decode actually pays off, once the time lost waiting for data to cross the public internet is taken into account.
 
-On NVIDIA, sample NVML counters at a fixed interval and integrate power over time to obtain energy. On AMD, use the AMD SMI equivalents. Field names differ between ROCm versions, so verify them on the target environment before trusting a single number.
 
 ---
 
